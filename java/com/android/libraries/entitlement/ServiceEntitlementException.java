@@ -16,18 +16,22 @@
 
 package com.android.libraries.entitlement;
 
-/** Indicates errors happened in retrieving service entitlement configuration. */
+/**
+ * Indicates errors happened in retrieving service entitlement configuration.
+ */
 public class ServiceEntitlementException extends Exception {
-    /** Unknown error. */
+    /**
+     * Unknown error.
+     */
     public static final int ERROR_UNKNOWN = 0;
-    /** Android telephony is unable to provide info like IMSI, e.g. when modem crashed. */
+    /**
+     * Android telephony is unable to provide info like IMSI, e.g. when modem crashed.
+     */
     public static final int ERROR_PHONE_NOT_AVAILABLE = 1;
     /**
      * SIM not returning a response to the EAP-AKA challenge, e.g. when the challenge is invalid.
-     * This
-     * can happen only when an embedded EAP-AKA challange is conducted, as per GMSA spec TS.43
-     * section
-     * 2.6.1.
+     * This can happen only when an embedded EAP-AKA challange is conducted, as per GMSA spec TS.43
+     * section 2.6.1.
      */
     public static final int ERROR_ICC_AUTHENTICATION_NOT_AVAILABLE = 2;
     /**
@@ -42,25 +46,71 @@ public class ServiceEntitlementException extends Exception {
      */
     public static final int ERROR_HTTP_STATUS_NOT_SUCCESS = 4;
 
-    public ServiceEntitlementException(String message) {
-        // TODO(b/177544547): add implementation
+    /**
+     * HTTP response received with a malformed format. e.g. the response with content-type JSON but
+     * failing JSON parser.
+     */
+    public static final int MALFORMED_HTTP_RESPONSE = 5;
+
+    /**
+     * Default HTTP status if not been specified.
+     */
+    private static final int HTTP_STATUS_UNSPECIFIED = 0;
+
+    /**
+     * An empty string if Retry-After header in HTTP response not been specified.
+     */
+    private static final String RETRY_AFTER_UNSPECIFIED = "";
+
+    private int mError;
+    private int mHttpStatus;
+    private String mRetryAfter;
+
+    public ServiceEntitlementException(int error, String message) {
+        this(error, HTTP_STATUS_UNSPECIFIED, RETRY_AFTER_UNSPECIFIED, message);
+    }
+
+    public ServiceEntitlementException(int error, int httpStatus, String message) {
+        this(error, httpStatus, RETRY_AFTER_UNSPECIFIED, message);
+    }
+
+    public ServiceEntitlementException(
+            int error, int httpStatus, String retryAfter, String message) {
+        super(message);
+        this.mError = error;
+        this.mHttpStatus = httpStatus;
+        this.mRetryAfter = retryAfter;
+    }
+
+    public ServiceEntitlementException(int error, String message, Throwable cause) {
+        this(error, HTTP_STATUS_UNSPECIFIED, RETRY_AFTER_UNSPECIFIED, message, cause);
+    }
+
+    public ServiceEntitlementException(int error, int httpStatus, String message, Throwable cause) {
+        this(error, httpStatus, RETRY_AFTER_UNSPECIFIED, message, cause);
     }
 
     public ServiceEntitlementException(
             int error, int httpStatus, String retryAfter, String message, Throwable cause) {
-        // TODO(b/177544547): add implementation
+        super(message, cause);
+        this.mError = error;
+        this.mHttpStatus = httpStatus;
+        this.mRetryAfter = retryAfter;
     }
 
-    /** Returns the error code, see {@link #ERROR_*}. */
+    /**
+     * Returns the error code, see {@link #ERROR_*}. {@link #ERROR_UNKNOWN} if not been specified.
+     */
     public int getErrorCode() {
-        // TODO(b/177544547): add implementation
-        return ERROR_UNKNOWN;
+        return mError;
     }
 
-    /** Returns the HTTP status code returned by entitlement server; 0 if unavailable. */
+    /**
+     * Returns the HTTP status code returned by entitlement server; {@link #HTTP_STATUS_UNSPECIFIED}
+     * if not been specified.
+     */
     public int getHttpStatus() {
-        // TODO(b/177544547): add implementation
-        return ERROR_SEVER_NOT_CONNECTABLE;
+        return mHttpStatus;
     }
 
     /**
@@ -71,7 +121,6 @@ public class ServiceEntitlementException extends Exception {
      * https://tools.ietf.org/html/rfc7231#section-7.1.3
      */
     public String getRetryAfter() {
-        // TODO(b/177544547): add implementation
-        return null;
+        return mRetryAfter;
     }
 }

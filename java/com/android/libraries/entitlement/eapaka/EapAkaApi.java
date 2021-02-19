@@ -16,11 +16,16 @@
 
 package com.android.libraries.entitlement.eapaka;
 
+import static com.android.libraries.entitlement.ServiceEntitlementException.MALFORMED_HTTP_RESPONSE;
+
 import android.content.Context;
 import android.net.Uri;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
+
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 
 import com.android.libraries.entitlement.ServiceEntitlementException;
 import com.android.libraries.entitlement.ServiceEntitlementRequest;
@@ -30,68 +35,93 @@ import com.android.libraries.entitlement.http.HttpConstants.RequestMethod;
 import com.android.libraries.entitlement.http.HttpRequest;
 import com.android.libraries.entitlement.http.HttpResponse;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import androidx.annotation.Nullable;
-
-import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.google.common.net.HttpHeaders;
 
-import java.net.CookieHandler;
-import java.net.CookieManager;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class EapAkaApi {
     private static final String TAG = "ServiceEntitlement";
 
     public static final String EAP_CHALLENGE_RESPONSE = "eap-relay-packet";
 
-    /** Current version of the entitlement configuration. */
+    /**
+     * Current version of the entitlement configuration.
+     */
     private static final String VERS = "vers";
-    /** Version of the entitlement configuration. */
+    /**
+     * Version of the entitlement configuration.
+     */
     private static final String ENTITLEMENT_VERSION = "entitlement_version";
     /**
-     * Unique identifier for the device. Refer to {@link
-     * android.telephony.TelephonyManager#getImei()}.
+     * Unique identifier for the device. Refer to
+     * {@link android.telephony.TelephonyManager#getImei()}.
      */
     private static final String TERMINAL_ID = "terminal_id";
-    /** Device manufacturer. */
+    /**
+     * Device manufacturer.
+     */
     private static final String TERMINAL_VENDOR = "terminal_vendor";
-    /** Device model. */
+    /**
+     * Device model.
+     */
     private static final String TERMINAL_MODEL = "terminal_model";
-    /** Device software version. */
+    /**
+     * Device software version.
+     */
     private static final String TERMIAL_SW_VERSION = "terminal_sw_version";
-    /** Identifier for the requested entitlement. */
+    /**
+     * Identifier for the requested entitlement.
+     */
     private static final String APP = "app";
-    /** NAI needed for EAP-AKA authentication. */
+    /**
+     * NAI needed for EAP-AKA authentication.
+     */
     private static final String EAP_ID = "EAP_ID";
 
     private static final String IMSI = "IMSI";
     private static final String TOKEN = "token";
-    /** Action for the notification registration token. */
+    /**
+     * Action for the notification registration token.
+     */
     private static final String NOTIF_ACTION = "notif_action";
-    /** Attribute name of the notification registration token. */
+    /**
+     * Attribute name of the notification registration token.
+     */
     private static final String NOTIF_TOKEN = "notif_token";
-    /** Attribute name of the app version. */
+    /**
+     * Attribute name of the app version.
+     */
     private static final String APP_VERSION = "app_version";
-    /** Attribute name of the app name. */
+    /**
+     * Attribute name of the app name.
+     */
     private static final String APP_NAME = "app_name";
+    /**
+     * Expected content type of the response body.
+     */
+    private static final String ACCEPT_CONTENT_TYPE_JSON_AND_XML =
+            "application/vnd.gsma.eap-relay.v1.0+json, text/vnd.wap.connectivity-xml";
+    /**
+     * Required content type to the response body.
+     */
+    private static final String REQUEST_CONTENT_TYPE_JSON =
+            "application/vnd.gsma.eap-relay.v1.0+json";
 
-    private final Context context;
-    private final int simSubscriptionId;
-    private final HttpClient httpClient;
+    private final Context mContext;
+    private final int mSimSubscriptionId;
+    private final HttpClient mHttpClient;
 
     public EapAkaApi(Context context, int simSubscriptionId) {
-        this.context = context;
-        this.simSubscriptionId = simSubscriptionId;
-        this.httpClient = new HttpClient();
+        this(context, simSubscriptionId, new HttpClient());
     }
 
     @VisibleForTesting
     EapAkaApi(Context context, int simSubscriptionId, HttpClient httpClient) {
-        this.context = context;
-        this.simSubscriptionId = simSubscriptionId;
-        this.httpClient = httpClient;
+        this.mContext = context;
+        this.mSimSubscriptionId = simSubscriptionId;
+        this.mHttpClient = httpClient;
     }
 
     /**
@@ -103,84 +133,74 @@ public class EapAkaApi {
      */
     @Nullable
     public String queryEntitlementStatus(
-            String appId, String serverUrl, ServiceEntitlementRequest request)
+            ImmutableList<String> appIds, String serverUrl, ServiceEntitlementRequest request)
             throws ServiceEntitlementException {
-        // TODO(b/177562073): localize cookie management instead of VM global CookieHandler
-        CookieHandler.setDefault(new CookieManager());
-
         HttpRequest httpRequest =
                 HttpRequest.builder()
-                        .setUrl(entitlementStatusUrl(appId, serverUrl, request))
+                        .setUrl(entitlementStatusUrl(appIds, serverUrl, request))
                         .setRequestMethod(RequestMethod.GET)
-                        .addRequestProperty(
-                                HttpHeaders.ACCEPT,
-                                "application/vnd.gsma.eap-relay.v1.0+json, text/vnd.wap"
-                                        + ".connectivity-xml")
+                        .addRequestProperty(HttpHeaders.ACCEPT, ACCEPT_CONTENT_TYPE_JSON_AND_XML)
                         .build();
-        HttpResponse response = httpClient.request(httpRequest);
-        if (response == null) {
-            throw new ServiceEntitlementException("Null http response");
-        }
-        if (response.contentType() == ContentType.JSON) {
-            try {
-                // EapAka token challenge for initial AuthN
-                Log.d(TAG, "initial AuthN");
-                String akaChallengeResponse =
-                        new EapAkaResponse(
-                                new JSONObject(response.body()).getString(EAP_CHALLENGE_RESPONSE))
-                                .getEapAkaChallengeResponse(context, simSubscriptionId);
-                JSONObject postData = new JSONObject();
-                postData.put(EAP_CHALLENGE_RESPONSE, akaChallengeResponse);
-                return challengeResponse(postData, serverUrl);
-            } catch (JSONException jsonException) {
-                Log.e(TAG, "queryEntitlementStatus failed. jsonException: " + jsonException);
-                return null;
+        HttpResponse response = mHttpClient.request(httpRequest);
+        if (request.authenticationToken().isEmpty()) {
+            // EapAka token challenge for initial AuthN
+            if (response.contentType() != ContentType.JSON) {
+                throw new ServiceEntitlementException(
+                        MALFORMED_HTTP_RESPONSE, "Unexpected http ContentType");
             }
-        } else if (response.contentType() == ContentType.XML) {
+
+            Log.d(TAG, "initial AuthN");
+            String responseData = "";
+            try {
+                responseData = new JSONObject(response.body()).getString(
+                        EAP_CHALLENGE_RESPONSE);
+            } catch (JSONException jsonException) {
+                throw new ServiceEntitlementException(
+                        MALFORMED_HTTP_RESPONSE, "Failed to parse json object", jsonException);
+            }
+            return challengeResponse(
+                    new EapAkaResponse(responseData).getEapAkaChallengeResponse(mContext,
+                            mSimSubscriptionId), serverUrl, response.cookie());
+        } else {
             // Result of fast AuthN
             Log.d(TAG, "fast AuthN");
             return response.body();
         }
-        throw new ServiceEntitlementException("Unexpected http ContentType");
     }
 
-    private String challengeResponse(JSONObject postData, String serverUrl)
+    private String challengeResponse(String akaChallengeResponse, String serverUrl, String cookie)
             throws ServiceEntitlementException {
         Log.d(TAG, "challengeResponse");
+        JSONObject postData = new JSONObject();
+        try {
+            postData.put(EAP_CHALLENGE_RESPONSE, akaChallengeResponse);
+        } catch (JSONException jsonException) {
+            throw new ServiceEntitlementException(
+                    MALFORMED_HTTP_RESPONSE, "Failed to put post data", jsonException);
+        }
         HttpRequest request =
                 HttpRequest.builder()
                         .setUrl(serverUrl)
                         .setRequestMethod(RequestMethod.POST)
                         .setPostData(postData)
-                        .addRequestProperty(
-                                HttpHeaders.ACCEPT,
-                                "application/vnd.gsma.eap-relay.v1.0+json, text/vnd.wap"
-                                        + ".connectivity-xml")
-                        .addRequestProperty(HttpHeaders.CONTENT_TYPE,
-                                "application/vnd.gsma.eap-relay.v1.0+json")
+                        .addRequestProperty(HttpHeaders.ACCEPT, ACCEPT_CONTENT_TYPE_JSON_AND_XML)
+                        .addRequestProperty(HttpHeaders.CONTENT_TYPE, REQUEST_CONTENT_TYPE_JSON)
+                        .addRequestProperty(HttpHeaders.COOKIE, cookie)
                         .build();
-
-        HttpResponse response = httpClient.request(request);
-        if (response == null || response.contentType() != ContentType.XML) {
-            throw new ServiceEntitlementException("Unexpected http response.");
-        }
-
-        return response.body();
+        return mHttpClient.request(request).body();
     }
 
-    @VisibleForTesting
     String entitlementStatusUrl(
-            String appId, String serverUrl, ServiceEntitlementRequest request) {
-        TelephonyManager telephonyManager =
-                (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-        telephonyManager = telephonyManager.createForSubscriptionId(simSubscriptionId);
+            ImmutableList<String> appIds, String serverUrl, ServiceEntitlementRequest request) {
+        TelephonyManager telephonyManager = mContext.getSystemService(
+                TelephonyManager.class).createForSubscriptionId(mSimSubscriptionId);
         Uri.Builder urlBuilder = Uri.parse(serverUrl).buildUpon();
         if (TextUtils.isEmpty(request.authenticationToken())) {
             // EAP_ID required for initial AuthN
             urlBuilder.appendQueryParameter(
                     EAP_ID,
                     getImsiEap(telephonyManager.getSimOperator(),
-                               telephonyManager.getSubscriberId()));
+                            telephonyManager.getSubscriberId()));
         } else {
             // IMSI and token required for fast AuthN.
             urlBuilder
@@ -211,13 +231,16 @@ public class EapAkaApi {
             urlBuilder.appendQueryParameter(APP_NAME, request.appName());
         }
 
+        for (String appId : appIds) {
+            urlBuilder.appendQueryParameter(APP, appId);
+        }
+
         return urlBuilder
                 // Identity and Authentication parameters
                 .appendQueryParameter(TERMINAL_VENDOR, request.terminalVendor())
                 .appendQueryParameter(TERMINAL_MODEL, request.terminalModel())
                 .appendQueryParameter(TERMIAL_SW_VERSION, request.terminalSoftwareVersion())
                 // General Service parameters
-                .appendQueryParameter(APP, appId)
                 .appendQueryParameter(VERS, Integer.toString(request.configurationVersion()))
                 .appendQueryParameter(ENTITLEMENT_VERSION, request.entitlementVersion())
                 .toString();
