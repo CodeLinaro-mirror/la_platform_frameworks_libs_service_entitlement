@@ -28,7 +28,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import com.android.libraries.entitlement.ServiceEntitlementException;
-import com.android.libraries.entitlement.eapaka.utils.BytesConverter;
+import com.android.libraries.entitlement.utils.BytesConverter;
 
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -40,7 +40,7 @@ import javax.crypto.spec.SecretKeySpec;
  * Generate the response of EAP-AKA token challenge. Refer to RFC 4187 Section 8.1 Message
  * Format/RFC 3748 Session 4 EAP Packet Format.
  */
-class EapAkaResponse {
+public class EapAkaResponse {
     private static final String TAG = "ServiceEntitlement";
 
     private static final int EAP_AKA_HEADER_LENGTH = 8;
