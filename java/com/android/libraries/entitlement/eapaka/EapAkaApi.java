@@ -29,10 +29,10 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import com.android.libraries.entitlement.CarrierConfig;
+import com.android.libraries.entitlement.EsimOdsaOperation;
 import com.android.libraries.entitlement.ServiceEntitlementException;
 import com.android.libraries.entitlement.ServiceEntitlementRequest;
 import com.android.libraries.entitlement.http.HttpClient;
-import com.android.libraries.entitlement.http.HttpConstants.ContentType;
 import com.android.libraries.entitlement.http.HttpConstants.RequestMethod;
 import com.android.libraries.entitlement.http.HttpRequest;
 import com.android.libraries.entitlement.http.HttpResponse;
@@ -48,68 +48,39 @@ public class EapAkaApi {
 
     public static final String EAP_CHALLENGE_RESPONSE = "eap-relay-packet";
 
-    /**
-     * Current version of the entitlement configuration.
-     */
     private static final String VERS = "vers";
-    /**
-     * Version of the entitlement configuration.
-     */
     private static final String ENTITLEMENT_VERSION = "entitlement_version";
-    /**
-     * Unique identifier for the device. Refer to
-     * {@link android.telephony.TelephonyManager#getImei()}.
-     */
     private static final String TERMINAL_ID = "terminal_id";
-    /**
-     * Device manufacturer.
-     */
     private static final String TERMINAL_VENDOR = "terminal_vendor";
-    /**
-     * Device model.
-     */
     private static final String TERMINAL_MODEL = "terminal_model";
-    /**
-     * Device software version.
-     */
     private static final String TERMIAL_SW_VERSION = "terminal_sw_version";
-    /**
-     * Identifier for the requested entitlement.
-     */
     private static final String APP = "app";
-    /**
-     * NAI needed for EAP-AKA authentication.
-     */
     private static final String EAP_ID = "EAP_ID";
-
     private static final String IMSI = "IMSI";
     private static final String TOKEN = "token";
-    /**
-     * Action for the notification registration token.
-     */
     private static final String NOTIF_ACTION = "notif_action";
-    /**
-     * Attribute name of the notification registration token.
-     */
     private static final String NOTIF_TOKEN = "notif_token";
-    /**
-     * Attribute name of the app version.
-     */
     private static final String APP_VERSION = "app_version";
-    /**
-     * Attribute name of the app name.
-     */
     private static final String APP_NAME = "app_name";
-    /**
-     * Expected content type of the response body.
-     */
-    private static final String ACCEPT_CONTENT_TYPE_JSON_AND_XML =
-            "application/vnd.gsma.eap-relay.v1.0+json, text/vnd.wap.connectivity-xml";
-    /**
-     * Required content type to the response body.
-     */
-    private static final String REQUEST_CONTENT_TYPE_JSON =
-            "application/vnd.gsma.eap-relay.v1.0+json";
+
+    private static final String OPERATION = "operation";
+    private static final String OPERATION_TYPE = "operation_type";
+    private static final String COMPANION_TERMINAL_ID = "companion_terminal_id";
+    private static final String COMPANION_TERMINAL_VENDOR = "companion_terminal_vendor";
+    private static final String COMPANION_TERMINAL_MODEL = "companion_terminal_model";
+    private static final String COMPANION_TERMINAL_SW_VERSION = "companion_terminal_sw_version";
+    private static final String COMPANION_TERMINAL_FRIENDLY_NAME =
+            "companion_terminal_friendly_name";
+    private static final String COMPANION_TERMINAL_SERVICE = "companion_terminal_service";
+    private static final String COMPANION_TERMINAL_ICCID = "companion_terminal_iccid";
+    private static final String COMPANION_TERMINAL_EID = "companion_terminal_eid";
+
+    private static final String TERMINAL_ICCID = "terminal_iccid";
+    private static final String TERMINAL_EID = "terminal_eid";
+
+    private static final String TARGET_TERMINAL_ID = "target_terminal_id";
+    private static final String TARGET_TERMINAL_ICCID = "target_terminal_iccid";
+    private static final String TARGET_TERMINAL_EID = "target_terminal_eid";
 
     // In case of EAP-AKA synchronization failure, we try to recover for at most two times.
     private static final int FOLLOW_SYNC_FAILURE_MAX_COUNT = 2;
@@ -138,27 +109,30 @@ public class EapAkaApi {
      */
     @Nullable
     public String queryEntitlementStatus(ImmutableList<String> appIds,
-                                         CarrierConfig carrierConfig,
-                                         ServiceEntitlementRequest request)
+            CarrierConfig carrierConfig, ServiceEntitlementRequest request)
             throws ServiceEntitlementException {
-        HttpRequest httpRequest =
-                HttpRequest.builder()
-                        .setUrl(entitlementStatusUrl(appIds, carrierConfig.serverUrl(), request))
-                        .setRequestMethod(RequestMethod.GET)
-                        .addRequestProperty(HttpHeaders.ACCEPT, ACCEPT_CONTENT_TYPE_JSON_AND_XML)
-                        .setTimeoutInSec(carrierConfig.timeoutInSec())
-                        .setNetwork(carrierConfig.network())
-                        .build();
-        HttpResponse response = mHttpClient.request(httpRequest);
-        if (!request.authenticationToken().isEmpty()) {
+        Uri.Builder urlBuilder = Uri.parse(carrierConfig.serverUrl()).buildUpon();
+        appendParametersForServiceEntitlementRequest(urlBuilder, appIds, request);
+        if (!TextUtils.isEmpty(request.authenticationToken())) {
             // Fast Re-Authentication flow with pre-existing auth token
             Log.d(TAG, "Fast Re-Authentication");
-            return response.body();
+            return httpGet(
+                    urlBuilder.toString(), carrierConfig, request.acceptContentType()).body();
+        } else {
+            // Full Authentication flow
+            Log.d(TAG, "Full Authentication");
+            HttpResponse challengeResponse =
+                    httpGet(
+                        urlBuilder.toString(),
+                        carrierConfig,
+                        ServiceEntitlementRequest.ACCEPT_CONTENT_TYPE_JSON);
+            return respondToEapAkaChallenge(
+                    carrierConfig,
+                    challengeResponse,
+                    FOLLOW_SYNC_FAILURE_MAX_COUNT,
+                    request.acceptContentType())
+                    .body();
         }
-        // Full Authentication flow
-        Log.d(TAG, "Full Authentication");
-        return respondToEapAkaChallenge(carrierConfig, response, FOLLOW_SYNC_FAILURE_MAX_COUNT)
-                .body();
     }
 
     /**
@@ -177,14 +151,15 @@ public class EapAkaApi {
      *       is greater than zero. When this method call itself {@code followSyncFailureCount} is
      *       reduced by one to prevent infinite loop (unlikely in practice, but just in case).
      * </ul>
+     *
+     * @param response Challenge response from server which its content type is JSON
      */
     private HttpResponse respondToEapAkaChallenge(
-            CarrierConfig carrierConfig, HttpResponse response, int followSyncFailureCount)
+            CarrierConfig carrierConfig,
+            HttpResponse response,
+            int followSyncFailureCount,
+            String contentType)
             throws ServiceEntitlementException {
-        if (response.contentType() != ContentType.JSON) {
-            throw new ServiceEntitlementException(
-                    ERROR_MALFORMED_HTTP_RESPONSE, "Unexpected http ContentType");
-        }
         String eapAkaChallenge;
         try {
             eapAkaChallenge = new JSONObject(response.body()).getString(EAP_CHALLENGE_RESPONSE);
@@ -197,21 +172,26 @@ public class EapAkaApi {
                 EapAkaResponse.respondToEapAkaChallenge(mContext, mSimSubscriptionId, challenge);
         // This could be a successful authentication, or synchronization failure.
         if (eapAkaResponse.response() != null) { // successful authentication
-            return challengeResponse(eapAkaResponse.response(), carrierConfig, response.cookie());
+            return challengeResponse(
+                            eapAkaResponse.response(),
+                            carrierConfig,
+                            response.cookie(),
+                            contentType);
         } else if (eapAkaResponse.synchronizationFailureResponse() != null) {
             Log.d(TAG, "synchronization failure");
             HttpResponse newChallenge =
                     challengeResponse(
                             eapAkaResponse.synchronizationFailureResponse(),
                             carrierConfig,
-                            response.cookie());
+                            response.cookie(),
+                            ServiceEntitlementRequest.ACCEPT_CONTENT_TYPE_JSON);
             if (followSyncFailureCount > 0) {
                 return respondToEapAkaChallenge(
-                        carrierConfig, newChallenge, followSyncFailureCount - 1);
+                        carrierConfig, newChallenge, followSyncFailureCount - 1, contentType);
             } else {
                 throw new ServiceEntitlementException(
-                    ERROR_EAP_AKA_SYNCHRONIZATION_FAILURE,
-                    "Unable to recover from EAP-AKA synchroinization failure");
+                        ERROR_EAP_AKA_SYNCHRONIZATION_FAILURE,
+                        "Unable to recover from EAP-AKA synchroinization failure");
             }
         } else { // not possible
             throw new AssertionError("EapAkaResponse invalid.");
@@ -219,7 +199,10 @@ public class EapAkaApi {
     }
 
     private HttpResponse challengeResponse(
-            String eapAkaChallengeResponse, CarrierConfig carrierConfig, String cookie)
+            String eapAkaChallengeResponse,
+            CarrierConfig carrierConfig,
+            String cookie,
+            String contentType)
             throws ServiceEntitlementException {
         Log.d(TAG, "challengeResponse");
         JSONObject postData = new JSONObject();
@@ -234,8 +217,10 @@ public class EapAkaApi {
                         .setUrl(carrierConfig.serverUrl())
                         .setRequestMethod(RequestMethod.POST)
                         .setPostData(postData)
-                        .addRequestProperty(HttpHeaders.ACCEPT, ACCEPT_CONTENT_TYPE_JSON_AND_XML)
-                        .addRequestProperty(HttpHeaders.CONTENT_TYPE, REQUEST_CONTENT_TYPE_JSON)
+                        .addRequestProperty(HttpHeaders.ACCEPT, contentType)
+                        .addRequestProperty(
+                                HttpHeaders.CONTENT_TYPE,
+                                ServiceEntitlementRequest.ACCEPT_CONTENT_TYPE_JSON)
                         .addRequestProperty(HttpHeaders.COOKIE, cookie)
                         .setTimeoutInSec(carrierConfig.timeoutInSec())
                         .setNetwork(carrierConfig.network())
@@ -243,11 +228,46 @@ public class EapAkaApi {
         return mHttpClient.request(request);
     }
 
-    String entitlementStatusUrl(
-            ImmutableList<String> appIds, String serverUrl, ServiceEntitlementRequest request) {
+    /**
+     * Retrieves raw doc of performing ODSA operations. For operation type, see {@link
+     * EsimOdsaOperation}.
+     *
+     * <p>Implementation based on GSMA TS.43-v5.0 6.1.
+     */
+    public String performEsimOdsaOperation(String appId, CarrierConfig carrierConfig,
+            ServiceEntitlementRequest request, EsimOdsaOperation odsaOperation)
+            throws ServiceEntitlementException {
+        Uri.Builder urlBuilder = Uri.parse(carrierConfig.serverUrl()).buildUpon();
+        appendParametersForServiceEntitlementRequest(urlBuilder, ImmutableList.of(appId), request);
+        appendParametersForEsimOdsaOperation(urlBuilder, odsaOperation);
+
+        if (!TextUtils.isEmpty(request.authenticationToken())) {
+            // Fast Re-Authentication flow with pre-existing auth token
+            Log.d(TAG, "Fast Re-Authentication");
+            return httpGet(
+                    urlBuilder.toString(), carrierConfig, request.acceptContentType()).body();
+        } else {
+            // Full Authentication flow
+            Log.d(TAG, "Full Authentication");
+            HttpResponse challengeResponse =
+                    httpGet(
+                            urlBuilder.toString(),
+                            carrierConfig,
+                            ServiceEntitlementRequest.ACCEPT_CONTENT_TYPE_JSON);
+            return respondToEapAkaChallenge(
+                    carrierConfig,
+                    challengeResponse,
+                    FOLLOW_SYNC_FAILURE_MAX_COUNT,
+                    request.acceptContentType())
+                    .body();
+        }
+    }
+
+    private void appendParametersForServiceEntitlementRequest(
+            Uri.Builder urlBuilder, ImmutableList<String> appIds,
+            ServiceEntitlementRequest request) {
         TelephonyManager telephonyManager = mContext.getSystemService(
                 TelephonyManager.class).createForSubscriptionId(mSimSubscriptionId);
-        Uri.Builder urlBuilder = Uri.parse(serverUrl).buildUpon();
         if (TextUtils.isEmpty(request.authenticationToken())) {
             // EAP_ID required for initial AuthN
             urlBuilder.appendQueryParameter(
@@ -276,27 +296,74 @@ public class EapAkaApi {
         }
 
         // Optional query parameters, append them if not empty
-        if (!TextUtils.isEmpty(request.appVersion())) {
-            urlBuilder.appendQueryParameter(APP_VERSION, request.appVersion());
-        }
-
-        if (!TextUtils.isEmpty(request.appName())) {
-            urlBuilder.appendQueryParameter(APP_NAME, request.appName());
-        }
+        appendOptionalQueryParameter(urlBuilder, APP_VERSION, request.appVersion());
+        appendOptionalQueryParameter(urlBuilder, APP_NAME, request.appName());
 
         for (String appId : appIds) {
             urlBuilder.appendQueryParameter(APP, appId);
         }
 
-        return urlBuilder
+        urlBuilder
                 // Identity and Authentication parameters
                 .appendQueryParameter(TERMINAL_VENDOR, request.terminalVendor())
                 .appendQueryParameter(TERMINAL_MODEL, request.terminalModel())
                 .appendQueryParameter(TERMIAL_SW_VERSION, request.terminalSoftwareVersion())
                 // General Service parameters
                 .appendQueryParameter(VERS, Integer.toString(request.configurationVersion()))
-                .appendQueryParameter(ENTITLEMENT_VERSION, request.entitlementVersion())
-                .toString();
+                .appendQueryParameter(ENTITLEMENT_VERSION, request.entitlementVersion());
+    }
+
+    private void appendParametersForEsimOdsaOperation(
+            Uri.Builder urlBuilder, EsimOdsaOperation odsaOperation) {
+        urlBuilder.appendQueryParameter(OPERATION, odsaOperation.operation());
+        if (odsaOperation.operationType() != EsimOdsaOperation.OPERATION_TYPE_NOT_SET) {
+            urlBuilder.appendQueryParameter(OPERATION_TYPE,
+                    Integer.toString(odsaOperation.operationType()));
+        }
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_ID,
+                odsaOperation.companionTerminalId());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_VENDOR,
+                odsaOperation.companionTerminalVendor());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_MODEL,
+                odsaOperation.companionTerminalModel());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_SW_VERSION,
+                odsaOperation.companionTerminalSoftwareVersion());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_FRIENDLY_NAME,
+                odsaOperation.companionTerminalFriendlyName());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_SERVICE,
+                odsaOperation.companionTerminalService());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_ICCID,
+                odsaOperation.companionTerminalIccid());
+        appendOptionalQueryParameter(urlBuilder, COMPANION_TERMINAL_EID,
+                odsaOperation.companionTerminalEid());
+        appendOptionalQueryParameter(urlBuilder, TERMINAL_ICCID,
+                odsaOperation.terminalIccid());
+        appendOptionalQueryParameter(urlBuilder, TERMINAL_EID, odsaOperation.terminalEid());
+        appendOptionalQueryParameter(urlBuilder, TARGET_TERMINAL_ID,
+                odsaOperation.targetTerminalId());
+        appendOptionalQueryParameter(urlBuilder, TARGET_TERMINAL_ICCID,
+                odsaOperation.targetTerminalIccid());
+        appendOptionalQueryParameter(urlBuilder, TARGET_TERMINAL_EID,
+                odsaOperation.targetTerminalEid());
+    }
+
+    private HttpResponse httpGet(String url, CarrierConfig carrierConfig, String contentType)
+            throws ServiceEntitlementException {
+        HttpRequest httpRequest =
+                HttpRequest.builder()
+                        .setUrl(url)
+                        .setRequestMethod(RequestMethod.GET)
+                        .addRequestProperty(HttpHeaders.ACCEPT, contentType)
+                        .setTimeoutInSec(carrierConfig.timeoutInSec())
+                        .setNetwork(carrierConfig.network())
+                        .build();
+        return mHttpClient.request(httpRequest);
+    }
+
+    private void appendOptionalQueryParameter(Uri.Builder urlBuilder, String key, String value) {
+        if (!TextUtils.isEmpty(value)) {
+            urlBuilder.appendQueryParameter(key, value);
+        }
     }
 
     /**
