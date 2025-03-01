@@ -16,6 +16,7 @@
 
 package com.android.libraries.entitlement;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.nullToEmpty;
 
 import android.content.Context;
@@ -39,7 +40,6 @@ import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 
 import java.net.URL;
-import java.util.Objects;
 
 /**
  * The class responsible for TS.43 authentication process.
@@ -113,6 +113,7 @@ public class Ts43Authentication {
      * For test mocking only.
      */
     @VisibleForTesting
+    @Nullable
     private ServiceEntitlement mServiceEntitlement;
 
     /**
@@ -128,11 +129,8 @@ public class Ts43Authentication {
      */
     public Ts43Authentication(@NonNull Context context, @NonNull URL entitlementServerAddress,
             @Nullable String entitlementVersion) {
-        Objects.requireNonNull(context, "context is null");
-        Objects.requireNonNull(entitlementServerAddress, "entitlementServerAddress is null.");
-
-        mContext = context;
-        mEntitlementServerAddress = entitlementServerAddress;
+        mContext = checkNotNull(context);
+        mEntitlementServerAddress = checkNotNull(entitlementServerAddress);
 
         if (entitlementVersion != null) {
             mEntitlementVersion = entitlementVersion;
@@ -155,6 +153,8 @@ public class Ts43Authentication {
      * request in GSMA TS.43 Service Entitlement Configuration section 2.3.
      * @param appVersion The calling client's version. Used for {@code app_version} in HTTP GET
      * request in GSMA TS.43 Service Entitlement Configuration section 2.3.
+     * @param acceptContentType The accepted content type of the HTTP response, or {@code null} to
+     *                          use the default.
      *
      * @return The authentication token.
      *
@@ -167,10 +167,10 @@ public class Ts43Authentication {
      */
     @NonNull
     public Ts43AuthToken getAuthToken(int slotIndex, @NonNull @AppId String appId,
-            @Nullable String appName, @Nullable String appVersion)
+            @Nullable String appName, @Nullable String appVersion,
+            @Nullable String acceptContentType)
             throws ServiceEntitlementException {
-        Objects.requireNonNull(appId, "appId is null");
-
+        checkNotNull(appId);
         if (!Ts43Constants.isValidAppId(appId)) {
             throw new IllegalArgumentException("getAuthToken: invalid app id " + appId);
         }
@@ -186,13 +186,16 @@ public class Ts43Authentication {
 
         // Build the HTTP request. The default params are specified in
         // ServiceEntitlementRequest.builder() already.
-        ServiceEntitlementRequest request =
+        ServiceEntitlementRequest.Builder builder =
                 ServiceEntitlementRequest.builder()
                         .setEntitlementVersion(mEntitlementVersion)
-                        .setTerminalId(imei)
-                        .setAppName(appName)
-                        .setAppVersion(appVersion)
-                        .build();
+                        .setTerminalId(nullToEmpty(imei))
+                        .setAppName(nullToEmpty(appName))
+                        .setAppVersion(nullToEmpty(appVersion));
+        if (acceptContentType != null) {
+            builder.setAcceptContentType(acceptContentType);
+        }
+        ServiceEntitlementRequest request = builder.build();
         CarrierConfig carrierConfig = CarrierConfig.builder()
                 .setServerUrl(mEntitlementServerAddress.toString())
                 .build();
@@ -218,7 +221,7 @@ public class Ts43Authentication {
         try {
             response = mServiceEntitlement.getEntitlementStatusResponse(
                     ImmutableList.of(appId), request);
-            rawXml = response == null ? null : response.body();
+            rawXml = response == null ? "" : response.body();
             Log.d(TAG, "getAuthToken: rawXml=" + rawXml);
         } catch (ServiceEntitlementException e) {
             Log.w(TAG, "Failed to get authentication token. e=" + e);
@@ -267,6 +270,8 @@ public class Ts43Authentication {
      * request in GSMA TS.43 Service Entitlement Configuration section 2.3.
      * @param appVersion The calling client's version. Used for {@code app_version} in HTTP GET
      * request in GSMA TS.43 Service Entitlement Configuration section 2.3.
+     * @param acceptContentType The accepted content type of the HTTP response, or {@code null} to
+     *                          use the default.
      *
      * @return The URL of OIDC server with all the required parameters for client to launch a
      * user interface for users to interact with the authentication process. The parameters in URL
@@ -279,9 +284,9 @@ public class Ts43Authentication {
     @NonNull
     public URL getOidcAuthServer(@NonNull Context context, int slotIndex,
             @NonNull URL entitlementServerAddress, @Nullable String entitlementVersion,
-            @NonNull @AppId String appId, @Nullable String appName, @Nullable String appVersion)
-            throws ServiceEntitlementException {
-        return null;
+            @NonNull @AppId String appId, @Nullable String appName, @Nullable String appVersion,
+            @Nullable String acceptContentType) throws ServiceEntitlementException {
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /**
@@ -300,6 +305,6 @@ public class Ts43Authentication {
     @NonNull
     public Ts43AuthToken getAuthToken(@NonNull URL aesUrl)
             throws ServiceEntitlementException {
-        return null;
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 }
