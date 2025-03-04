@@ -338,7 +338,6 @@ public class Ts43OperationTest {
                 .setOperationType(EsimOdsaOperation.OPERATION_TYPE_SUBSCRIBE)
                 .setCompanionTerminalId(COMPANION_TERMINAL_ID)
                 .setCompanionTerminalEid(COMPANION_TERMINAL_EID)
-                .setOldTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .build();
 
         ManageSubscriptionResponse response = mTs43Operation.manageSubscription(request);
@@ -366,7 +365,6 @@ public class Ts43OperationTest {
                 .setOperationType(EsimOdsaOperation.OPERATION_TYPE_SUBSCRIBE)
                 .setCompanionTerminalId(COMPANION_TERMINAL_ID)
                 .setCompanionTerminalEid(COMPANION_TERMINAL_EID)
-                .setOldTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .build();
 
         ManageSubscriptionResponse response = mTs43Operation.manageSubscription(request);
@@ -394,7 +392,6 @@ public class Ts43OperationTest {
                 .setOperationType(EsimOdsaOperation.OPERATION_TYPE_SUBSCRIBE)
                 .setCompanionTerminalId(COMPANION_TERMINAL_ID)
                 .setCompanionTerminalEid(COMPANION_TERMINAL_EID)
-                .setOldTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .setMessageResponse(MESSAGE_RESPONSE)
                 .setMessageButton(MESSAGE_ACCEPT_PRESENT)
                 .build();
@@ -419,7 +416,6 @@ public class Ts43OperationTest {
 
         AcquireTemporaryTokenRequest request = AcquireTemporaryTokenRequest.builder()
                 .setAppId(Ts43Constants.APP_ODSA_PRIMARY)
-                .setTargetTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .setOperationTargets(ImmutableList.of(
                         EsimOdsaOperation.OPERATION_MANAGE_SUBSCRIPTION,
                         EsimOdsaOperation.OPERATION_ACQUIRE_CONFIGURATION))
@@ -445,7 +441,6 @@ public class Ts43OperationTest {
         doReturn(ACQUIRE_CONFIGURATION_RESPONSE).when(mMockHttpResponse).body();
         AcquireConfigurationRequest request = AcquireConfigurationRequest.builder()
                 .setAppId(Ts43Constants.APP_ODSA_PRIMARY)
-                .setOldTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .build();
 
         AcquireConfigurationResponse response = mTs43Operation.acquireConfiguration(request);
@@ -471,7 +466,6 @@ public class Ts43OperationTest {
         doReturn(ACQUIRE_CONFIGURATION_RESPONSE_MSG).when(mMockHttpResponse).body();
         AcquireConfigurationRequest request = AcquireConfigurationRequest.builder()
                 .setAppId(Ts43Constants.APP_ODSA_PRIMARY)
-                .setOldTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .build();
 
         AcquireConfigurationResponse response = mTs43Operation.acquireConfiguration(request);
@@ -500,7 +494,6 @@ public class Ts43OperationTest {
         doReturn(CHECK_ELIGIBILITY_RESPONSE).when(mMockHttpResponse).body();
         CheckEligibilityRequest request = CheckEligibilityRequest.builder()
                 .setAppId(Ts43Constants.APP_ODSA_PRIMARY)
-                .setTargetTerminalEntitlementProtocol(EsimOdsaOperation.ENTITLEMENT_PROTOCOL_TS43)
                 .build();
 
         CheckEligibilityResponse response = mTs43Operation.checkEligibility(request);
