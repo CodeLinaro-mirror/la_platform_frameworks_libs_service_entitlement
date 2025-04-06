@@ -19,6 +19,8 @@ package com.android.libraries.entitlement.odsa;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.android.libraries.entitlement.EsimOdsaOperation;
+import com.android.libraries.entitlement.EsimOdsaOperation.EntitlementProtocol;
 import com.android.libraries.entitlement.EsimOdsaOperation.OdsaOperation;
 import com.android.libraries.entitlement.utils.Ts43Constants;
 import com.android.libraries.entitlement.utils.Ts43Constants.AppId;
@@ -63,6 +65,16 @@ public final class AcquireTemporaryTokenOperation {
         @NonNull
         public abstract String companionTerminalId();
 
+        /**
+         * Returns whether the subscription transfer is for cross-TS.43 platform. Used by HTTP
+         * parameter {@code old_terminal_entitlement_protocol}.
+         *
+         * <p>This is an optional param for cross-platform.
+         */
+        @NonNull
+        @EntitlementProtocol
+        public abstract String targetTerminalEntitlementProtocol();
+
         /** Returns a new {@link Builder} object. */
         @NonNull
         public static Builder builder() {
@@ -70,7 +82,9 @@ public final class AcquireTemporaryTokenOperation {
                     .Builder()
                     .setAppId(Ts43Constants.APP_UNKNOWN)
                     .setOperationTargets(ImmutableList.of())
-                    .setCompanionTerminalId("");
+                    .setCompanionTerminalId("")
+                    .setTargetTerminalEntitlementProtocol(
+                            EsimOdsaOperation.ENTITLEMENT_PROTOCOL_UNKNOWN);
         }
 
         /** Builder. */
@@ -113,6 +127,19 @@ public final class AcquireTemporaryTokenOperation {
             @NonNull
             public abstract Builder setCompanionTerminalId(@NonNull String companionTerminalId);
 
+            /**
+             * Sets the entitlement protocol of primary device. Used by HTTP parameter
+             * {@code target_terminal_entitlement_protocol}.
+             *
+             * <p>This is an optional param for cross-platform.
+             *
+             * @param targetTerminalEntitlementProtocol The entitlement protocol of primary device.
+             * @return The builder.
+             */
+            @NonNull
+            public abstract Builder setTargetTerminalEntitlementProtocol(
+                    @NonNull @EntitlementProtocol String targetTerminalEntitlementProtocol);
+
             /** Returns the {@link AcquireTemporaryTokenRequest} object. */
             @NonNull
             public abstract AcquireTemporaryTokenRequest build();
@@ -149,7 +176,7 @@ public final class AcquireTemporaryTokenOperation {
             return new AutoValue_AcquireTemporaryTokenOperation_AcquireTemporaryTokenResponse
                     .Builder()
                     .setTemporaryToken("")
-                    .setTemporaryTokenExpiry(null)
+                    .setTemporaryTokenExpiry(Instant.EPOCH)
                     .setOperationTargets(ImmutableList.of());
         }
 
