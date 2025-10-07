@@ -276,6 +276,33 @@ public class EapAkaApiTest {
     }
 
     @Test
+    public void queryEntitlementStatus_invalidImsi() throws Exception {
+        when(mMockTelephonyManagerForSubId.getIccAuthentication(
+                        TelephonyManager.APPTYPE_USIM,
+                        TelephonyManager.AUTHTYPE_EAP_AKA,
+                        EAP_AKA_SECURITY_CONTEXT_REQUEST_EXPECTED))
+                .thenReturn(EAP_AKA_SECURITY_CONTEXT_RESPONSE_SUCCESS);
+        when(mMockTelephonyManagerForSubId.getSubscriberId()).thenReturn(null);
+        CarrierConfig carrierConfig = CarrierConfig.builder().setServerUrl(TEST_URL).build();
+        ServiceEntitlementRequest request = ServiceEntitlementRequest.builder().build();
+
+        ServiceEntitlementException exception =
+                expectThrows(
+                        ServiceEntitlementException.class,
+                        () ->
+                                mEapAkaApi.queryEntitlementStatus(
+                                        ImmutableList.of(ServiceEntitlement.APP_VOWIFI),
+                                        carrierConfig,
+                                        request,
+                                        ImmutableMap.of()));
+
+        assertThat(exception.getErrorCode())
+                .isEqualTo(ServiceEntitlementException.ERROR_INVALID_MCC_MNC_IMSI);
+        assertThat(exception.getMessage())
+                .isEqualTo("Invalid imsi or mccmnc. imsi: null, mccmnc: " + MCCMNC);
+    }
+
+    @Test
     public void queryEntitlementStatus_noAuthenticationToken_altenateEapAkaRealm()
             throws Exception {
         when(mMockTelephonyManagerForSubId.getIccAuthentication(
@@ -1369,6 +1396,46 @@ public class EapAkaApiTest {
                         .get(0)
                         .requestProperties())
                         .containsEntry("Key", "Value");
+    }
+
+    @Test
+    public void
+            performEsimOdsaOperation_manageSubscription_useHttpPost_returnsResult_with_IpAddresses()
+                    throws Exception {
+        HttpResponse xmlResponse =
+                HttpResponse.builder()
+                        .setContentType(ContentType.XML)
+                        .setBody(RESPONSE_XML)
+                        .build();
+        when(mMockHttpClient.request(any())).thenReturn(xmlResponse);
+        CarrierConfig carrierConfig =
+                CarrierConfig.builder().setServerUrl(TEST_URL).setUseHttpPost(true).build();
+        ServiceEntitlementRequest request =
+                ServiceEntitlementRequest.builder().setAuthenticationToken(TOKEN).build();
+        EsimOdsaOperation operation =
+                EsimOdsaOperation.builder()
+                        .setOperation(EsimOdsaOperation.OPERATION_MANAGE_SUBSCRIPTION)
+                        .setOperationType(EsimOdsaOperation.OPERATION_TYPE_SUBSCRIBE)
+                        .setIpv4Address("1.2.3.4")
+                        .setIpv6Address("1:2:3:4:5:6:7:8")
+                        .build();
+
+        HttpResponse response =
+                mEapAkaApi.performEsimOdsaOperation(
+                        ServiceEntitlement.APP_ODSA_COMPANION,
+                        carrierConfig,
+                        request,
+                        operation,
+                        ImmutableMap.of("Key", "Value"));
+
+        assertThat(response).isEqualTo(xmlResponse);
+        verify(mMockHttpClient, times(1)).request(mHttpRequestCaptor.capture());
+        assertThat(mHttpRequestCaptor.getAllValues().get(0).requestProperties())
+                .containsEntry("Key", "Value");
+        assertThat(mHttpRequestCaptor.getAllValues().get(0).postData().getString("ipv4_addr"))
+                .isEqualTo("1.2.3.4");
+        assertThat(mHttpRequestCaptor.getAllValues().get(0).postData().getString("ipv6_addr"))
+                .isEqualTo("1:2:3:4:5:6:7:8");
     }
 
     @Test
