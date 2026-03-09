@@ -172,7 +172,7 @@ public class Ts43Authentication {
      * {@code appId} is {@code null}.
      */
     @NonNull
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresApi(Build.VERSION_CODES.Q)
     public Ts43AuthToken getAuthToken(int slotIndex, @NonNull @AppId String appId,
             @Nullable String appName, @Nullable String appVersion,
             @Nullable String acceptContentType)
@@ -209,9 +209,8 @@ public class Ts43Authentication {
      * @throws NullPointerException when {@code context}, {@code entitlementServerAddress}, or
      * {@code appId} is {@code null}.
      */
-
     @NonNull
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresApi(Build.VERSION_CODES.Q)
     public Ts43AuthToken getAuthToken(int slotIndex, @NonNull @AppId String appId,
             @Nullable String appName, @Nullable String appVersion,
             @Nullable String acceptContentType, @Nullable CarrierConfig carrierConfig)
@@ -224,7 +223,13 @@ public class Ts43Authentication {
         String imei = null;
         TelephonyManager telephonyManager = mContext.getSystemService(TelephonyManager.class);
         if (telephonyManager != null) {
-            if (slotIndex < 0 || slotIndex >= telephonyManager.getActiveModemCount()) {
+            int modemCount = 0;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                modemCount = telephonyManager.getActiveModemCount();
+            } else {
+                modemCount = telephonyManager.getPhoneCount();
+            }
+            if (slotIndex < 0 || slotIndex >= modemCount) {
                 throw new IllegalArgumentException("getAuthToken: invalid slot index " + slotIndex);
             }
             imei = telephonyManager.getImei(slotIndex);
@@ -252,7 +257,6 @@ public class Ts43Authentication {
                         "getAuthToken: CarrierConfig doesn't have serverUrl " + carrierConfig);
             }
         }
-
         if (mServiceEntitlement == null) {
             int subId = SubscriptionManager.DEFAULT_SUBSCRIPTION_ID;
             if (Build.VERSION.SDK_INT < 34) {
@@ -306,6 +310,7 @@ public class Ts43Authentication {
 
         return Ts43AuthToken.create(authToken, cookies, validity);
     }
+
 
     /**
      * Get the URL of OIDC (OpenID Connect) server as described in TS.43 Service Entitlement
